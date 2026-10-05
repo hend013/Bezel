@@ -3906,10 +3906,9 @@ class Bar {
             vscrollbar_policy: id === 'dashboard' || id === 'shelf' || String(id).startsWith('group:') ? St.PolicyType.AUTOMATIC : St.PolicyType.NEVER,
             x_expand: true, y_expand: true,
         });
-        const menu = this._menuPopup(id);
         scroll.clip_to_allocation = true;
         scroll.set_child(content);
-        this._popupBox.add_child(decorateScroll(scroll, this._theme, !menu));
+        this._popupBox.add_child(decorateScroll(scroll, this._theme, false));
         this._popupFooter = content._bezelFooter ?? null;
         if (this._popupFooter) this._popupBox.add_child(this._popupFooter);
         this._popupScroll = scroll;
@@ -3966,6 +3965,7 @@ class Bar {
         if (id === 'power' && powerDim(this._state.modules.find(item => item.id === 'power'), this._overlay._settings))
             this._overlay._showDim(monitor, this._opening());
         chrome(this._popout, true, false);
+        content._preparePopup?.();
         const app = String(id).startsWith('app:');
         const stable = id === 'dashboard' || id === 'osd' || id === 'clock' || id === 'shelf' || rail;
         if (!app && !stable) {
@@ -4139,6 +4139,49 @@ class Bar {
         return null;
     }
 
+    _popupHeightLimit(next) {
+        const opening = this._opening();
+        const side = this._popupEdge === 'left' || this._popupEdge === 'right';
+        const radius = Math.max(12, this._state.radius);
+        const join = side ? Math.max(24, radius + 10) : Math.max(16, radius);
+        return Math.min(Math.max(64, next), this._monitor.height - opening.top - opening.bottom - join * 2);
+    }
+
+    _setDashboardSize(width, height, duration = 0) {
+        if (!this._popout) return;
+        height = this._popupHeightLimit(height);
+        if (this._dashboardSizeTimeline && this._dashboardSizeTarget?.width === width
+            && this._dashboardSizeTarget?.height === height)
+            return;
+        this._dashboardSizeTimeline?.stop();
+        this._dashboardSizeTimeline = null;
+        this._dashboardSizeTarget = {width, height};
+        const fromWidth = this._popout.width;
+        const fromHeight = this._popout.height;
+        const paint = progress => {
+            if (!this._popout) return;
+            this._popout.width = fromWidth + (width - fromWidth) * progress;
+            // Prevent an incoming wider page from allocating the header at its
+            // final width before the animated viewport has reached that width.
+            if (this._popoutId === 'dashboard' && this._popupContent)
+                this._popupContent.width = Math.max(1, this._popout.width - 36);
+            this._applyPopupHeight(fromHeight + (height - fromHeight) * progress);
+        };
+        if (!duration || !allowsMotion(St.Settings.get(), St.ReducedMotion)) {
+            paint(1);
+            return;
+        }
+        const timeline = new Clutter.Timeline({duration, actor: this._popout});
+        this._dashboardSizeTimeline = timeline;
+        timeline.set_progress_mode(Clutter.AnimationMode.EASE_OUT_CUBIC);
+        timeline.connect('new-frame', () => paint(timeline.get_progress()));
+        timeline.connect('completed', () => {
+            this._dashboardSizeTimeline = null;
+            paint(1);
+        });
+        timeline.start();
+    }
+
     _setPopupHeight(next) {
         if (!this._popout)
             return;
@@ -4149,6 +4192,34 @@ class Bar {
         const join = side ? Math.max(24, radius + 10) : Math.max(16, radius);
         const maxHeight = this._monitor.height - opening.top - opening.bottom - join * 2;
         const height = Math.round(Math.min(Math.max(64, next), maxHeight));
+        if (this._popupResizeTimeline && this._popupResizeTarget === height)
+            return;
+        this._popupResizeTimeline?.stop();
+        this._popupResizeTimeline = null;
+        this._popupResizeTarget = height;
+        const from = this._popout.height;
+        const duration = this._popoutId === 'notifications' && this._popupProgress === 1
+            && this._popupTarget !== 0 && allowsMotion(St.Settings.get(), St.ReducedMotion)
+            ? this._state.animationDuration : 0;
+        if (!duration || Math.abs(height - from) < 1) {
+            this._applyPopupHeight(height);
+            return;
+        }
+        const timeline = new Clutter.Timeline({duration, actor: this._popout});
+        this._popupResizeTimeline = timeline;
+        timeline.set_progress_mode(Clutter.AnimationMode.EASE_OUT_EXPO);
+        timeline.connect('new-frame', () =>
+            this._applyPopupHeight(from + (height - from) * timeline.get_progress()));
+        timeline.connect('completed', () => {
+            this._popupResizeTimeline = null;
+            this._applyPopupHeight(height);
+        });
+        timeline.start();
+    }
+
+    _applyPopupHeight(height) {
+        if (!this._popout)
+            return;
         // Resize the frame and viewport together. Animating only the outer actor
         // leaves its placement and clip behind the new content allocation.
         this._popout.remove_transition('height');
@@ -4177,14 +4248,15 @@ class Bar {
             || String(this._popoutId).startsWith('group:') || this._menuPopup();
     }
 
-    _fitPopup() {
+    _fitPopup(measureOnly = false, targetWidth = null) {
         if (this._popupFitLock || (this._popupLockedHeight && this._popoutId !== 'dashboard') || !this._popout || !this._popupContent)
             return;
         const pad = this._popoutId === 'status' ? 52 : this._popoutId === 'osd' || powerLayout(this._state.modules.find(item => item.id === 'power'), this._overlay._settings) === 'rail' && this._popoutId === 'power' ? 24 : 36;
-        const width = Math.max(1, this._popout.width - pad);
+        const width = Math.max(1, (targetWidth ?? this._popout.width) - pad);
         const app = String(this._popoutId).startsWith('app:');
         const scrolling = this._popupScrolls();
-        const cap = this._popoutId === 'dashboard' || String(this._popoutId).startsWith('group:') ? 900 : app ? 420 : this._popoutId === 'shelf' ? 560 : scrolling ? 480
+        const cap = this._popoutId === 'dashboard' || String(this._popoutId).startsWith('group:') ? 900 : app ? 420 : this._popoutId === 'shelf' ? 560
+            : this._popoutId === 'notifications' ? this._overlay._settings.get_int('notifications-max-height') : scrolling ? 480
             : ['dashboard', 'status', 'clock', 'osd', 'power'].includes(this._popoutId) ? 900 : 400;
         const extent = this._stackHeight(this._popupContent, width, scrolling ? 8000 : cap);
         let chrome = 0;
@@ -4196,6 +4268,10 @@ class Bar {
         const slack = ['notifications', 'status', 'launcher'].includes(this._popoutId) ? 12 : 0;
         const footer = this._popupFooter?.get_preferred_height(width)[1] ?? 0;
         const wanted = Math.max(minHeight, extent + pad + chrome + footer + slack);
+        if (measureOnly)
+            return this._popupHeightLimit(scrolling ? Math.min(wanted, cap) : wanted);
+        if (this._dashboardSizeTimeline)
+            return;
         this._setPopupHeight(scrolling ? Math.min(wanted, cap) : wanted);
         if (scrolling && this._popoutId !== 'launcher' && wanted > cap + 8)
             this._popupLockedHeight = true;
@@ -4258,6 +4334,7 @@ class Bar {
             return;
         this._popout.set_position(x, y);
         this._popupGeometry = geometry;
+        this._popupContent?._syncDashboardHeader?.();
         this._layoutDismissStrips();
         this._clipPopup(this._popupProgress);
     }
@@ -4385,6 +4462,12 @@ class Bar {
     }
 
     _close(animate = false) {
+        this._popupContent?._stopDashboardMotion?.();
+        this._dashboardSizeTimeline?.stop();
+        this._dashboardSizeTimeline = null;
+        this._popupResizeTimeline?.stop();
+        this._popupResizeTimeline = null;
+        this._popupResizeTarget = null;
         if (animate && this._popout && this._popupProgress > 0 && this._popout.visible && !this._popupInputHole) {
             this._animatePopup(0, () => this._close());
             return;
