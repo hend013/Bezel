@@ -44,10 +44,14 @@ export class SessionMotion {
             this._stopDesktop();
             return;
         }
-        this._startDesktop();
         // Session mode returns to user before the shield finishes sliding away.
-        // Wait for its actual disappearance so the reveal is visible in full.
-        if (this._unlockPending && !Main.screenShield?.actor.visible) {
+        // Keep the desktop removed until then: rebuilding now exposes settled
+        // bars through the fading shield before the reveal resets them.
+        if (this._unlockPending && Main.screenShield?.actor.visible) return;
+        this._startDesktop();
+        // Build and apply the first animation frame in the same main-loop turn,
+        // before the compositor can paint the newly created bars at full opacity.
+        if (this._unlockPending) {
             this._unlockPending = false;
             if (this._settings.get_boolean('unlock-animation')) {
                 try { this._revealDesktop(); }

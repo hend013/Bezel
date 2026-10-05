@@ -44,7 +44,6 @@ import {allowsMotion, chromeOptions} from './compat.js';
 import {NotificationBridge, buildNotificationCenter} from './notifications.js';
 import {decorateScroll} from './overflow.js';
 import {MODULES, createGroup, deleteGroup, assignGroup, resizeSpacer, addBar, addModule, patchBar, patchModule, removeBar, removeModule, setFloating, setKind, nudgeUnit, indicatorsPlaced} from './settingsModel.js';
-import {listDisplays, preferredDisplay} from './displays.js';
 import {activateScreenshot, bindToggle, darkStyleControl, dndControl, moduleSection, nightLightControl, performanceMenu, screenshotFace, screenshotRecording, settingsMenu, vpnMenu, watchScreenshotRecording} from './tools.js';
 
 export class BezelOverlay {
@@ -258,10 +257,8 @@ export class BezelOverlay {
                 if (Number.isInteger(index) && index >= 0)
                     return index;
             } catch {}
-            const match = preferredDisplay(listDisplays(), connector);
-            const found = match && Main.layoutManager.monitors.find(monitor => monitor.x === match.x && monitor.y === match.y);
-            if (found)
-                return found.index;
+            // Mutter runs in this process: a synchronous DisplayConfig query
+            // would block Shell waiting for its own main loop to reply.
         }
         return Main.layoutManager.primaryIndex ?? 0;
     }

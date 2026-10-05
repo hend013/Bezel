@@ -1555,7 +1555,7 @@ export class SettingsWindow {
             row.append(enabled);
             login.append(row);
         }
-        options.append(label('Style and speed apply to login, lock and unlock.', '', {wrap: true, xalign: 0}));
+        options.append(label('Style and speed apply to login, lock and unlock. Lock plays the style in reverse to close.', '', {wrap: true, xalign: 0}));
         options.append(label('Animation style'));
         const style = new Gtk.DropDown({model: Gtk.StringList.new(LOGIN_THEMES.map(([, name]) => name)),
             selected: Math.max(0, LOGIN_THEMES.findIndex(([id]) => id === this.settings.get_string('login-animation-theme'))),

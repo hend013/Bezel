@@ -135,6 +135,7 @@ export function liveFolder(bar, path) {
         entries.push('sep');
         entries.push({title: 'Open in Files', icon: 'folder-open-symbolic', shortcut: '', run: () => launch(current)});
         menu = menuFromEvent(bar, event, entries);
+        menu.actor.connect('destroy', () => { menu = null; });
     };
     const nav = (name, icon, run) => { const b = new St.Button({accessible_name: name, can_focus: true, child: new St.Icon({icon_name: icon, icon_size: 16}), style: `padding: 7px; border-radius: 8px; color: ${bar._theme.fg};`}); b.connect('clicked', run); toolbar.add_child(b); return b; };
     const back = nav('Back', 'go-previous-symbolic', () => { const previous = history.pop(); if (previous) navigate(previous, false); });

@@ -22,7 +22,7 @@ export function playLockAnimation(settings) {
     const frames = new Map(Main.layoutManager.monitors.map(monitor =>
         [monitor.index, {monitor, sides}]));
     return new LoginAnimation([], frames, resolveTheme(settings), state, undefined, false,
-        {parent, transientFrame: true});
+        {parent, closing: true, transientFrame: true});
 }
 
 // Bound CPU raster work and texture size on 4K/HiDPI displays. The compositor
@@ -100,6 +100,7 @@ export class LoginAnimation {
         this._frames = [];
         this._progress = 0;
         this._parent = options.parent;
+        this._closing = options.closing;
         this._transientFrame = options.transientFrame;
         this._theme = Object.hasOwn(THEME_DURATIONS, state.loginAnimationTheme) ? state.loginAnimationTheme : 'liquid';
 
@@ -193,6 +194,10 @@ export class LoginAnimation {
     }
 
     _paint(progress) {
+        const elapsed = progress;
+        // Lock reverses the selected reveal. Finish closing before fading the
+        // temporary cover away, so the final contraction remains visible.
+        if (this._closing) progress = 1 - Math.min(1, elapsed / 0.8);
         this._progress = progress;
         for (const frame of this._frames) {
             if (!frame.destroyed) { beginActor(frame, false); frame.actor.opacity = 0; }
@@ -201,7 +206,7 @@ export class LoginAnimation {
             area.opacity = Math.round((area._loginFrame?.opacity ?? 255) * openingMotion(this._theme, progress, 1, 1,
                 {left: 0, right: 0, top: 0, bottom: 0}, 0).opacity);
             if (this._transientFrame) {
-                const tail = Math.max(0, Math.min(1, (progress - 0.75) / 0.25));
+                const tail = Math.max(0, Math.min(1, (elapsed - 0.8) / 0.2));
                 area.opacity = Math.round(area.opacity * (1 - tail * tail * (3 - 2 * tail)));
             }
             const geometry = this._theme === 'fade' ? '' : area._loginGeometry();

@@ -64,7 +64,7 @@ function hideHelperActor(actor) {
 }
 
 function placeHelperWindow(win = helper.window) {
-    if (!win || !helper.target) return;
+    if (!win || win !== helper.window || !helper.actor?.mapped || !helper.target) return;
     const t = helper.target, rect = win.get_frame_rect();
     if (rect.x !== t.x || rect.y !== t.y || rect.width !== t.width || rect.height !== t.height)
         try { win.move_resize_frame(false, t.x, t.y, t.width, t.height); } catch {}
@@ -73,14 +73,9 @@ function placeHelperWindow(win = helper.window) {
 function hideHelperWindow(win) {
     if (!ownsHelper(win)) return;
     hideHelperActor(win.get_compositor_private());
-    placeHelperWindow(win);
-    try {
-        Meta.later_add(Meta.LaterType.BEFORE_REDRAW, () => {
-            hideHelperActor(win.get_compositor_private());
-            placeHelperWindow(win);
-            return GLib.SOURCE_REMOVE;
-        });
-    } catch {}
+    // Mutter is still constructing the native window here. Moving/resizing it
+    // from window-created (or map) can crash the compositor. syncNative places
+    // it after bindHelperWindow finds the mapped actor on a later main-loop turn.
 }
 
 function skipHelperAnimation() {
@@ -147,7 +142,6 @@ export function retainShelfHelper(action = 'copy') {
         helper.mapped = global.window_manager.connect('map', (_wm, actor) => {
             if (!ownsHelper(actor.meta_window)) return;
             hideHelperActor(actor);
-            placeHelperWindow(actor.meta_window);
         });
         const launcher = new Gio.SubprocessLauncher({flags: Gio.SubprocessFlags.STDIN_PIPE | Gio.SubprocessFlags.STDOUT_PIPE});
         launcher.setenv('GDK_BACKEND', GLib.getenv('WAYLAND_DISPLAY') ? 'wayland' : 'x11', true);

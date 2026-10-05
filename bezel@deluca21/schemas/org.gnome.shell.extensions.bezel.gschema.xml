@@ -63,7 +63,7 @@
     <key name="lock-animation" type="b">
       <default>false</default>
       <summary>Animate lock</summary>
-      <description>Play a decorative reveal over the lock screen using the selected animation style and speed. Respects reduced motion.</description>
+      <description>Play the selected animation style in reverse to close, then fade the temporary frame off the lock screen. Uses the selected speed and respects reduced motion.</description>
     </key>
     <key name="unlock-animation" type="b">
       <default>false</default>
